@@ -1,0 +1,53 @@
+# velox-grid — one box: postgres + api + N workers.
+#   docker compose up -d --build
+#   docker compose exec api node bin/grid.js key new my-project
+#   scale workers: docker compose up -d --scale worker=4
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: grid
+      POSTGRES_PASSWORD: grid
+      POSTGRES_DB: grid
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grid"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  api:
+    build: .
+    command: node bin/grid.js serve
+    environment:
+      DATABASE_URL: postgres://grid:grid@postgres:5432/grid
+      PORT: "7400"
+      ARTIFACT_DIR: /data/artifacts
+    ports:
+      - "7400:7400"
+    volumes:
+      - griddata:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build: .
+    command: node bin/grid.js work
+    environment:
+      DATABASE_URL: postgres://grid:grid@postgres:5432/grid
+      ARTIFACT_DIR: /data/artifacts
+      WORKER_POLL_MS: "250"
+    volumes:
+      - griddata:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  griddata:

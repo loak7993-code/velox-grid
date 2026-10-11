@@ -1,0 +1,23 @@
+{
+  "name": "velox-grid",
+  "version": "0.1.0",
+  "description": "Job API + worker fleet on top of velox: submit automation jobs, get results, artifacts and webhooks.",
+  "type": "module",
+  "main": "./src/api.js",
+  "bin": { "grid": "./bin/grid.js" },
+  "scripts": {
+    "migrate": "node bin/grid.js migrate",
+    "serve": "node bin/grid.js serve",
+    "work": "node bin/grid.js work",
+    "test": "node test/run.js",
+    "bench": "node test/bench.js"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "pg": "8.23.1",
+    "velox-automation": "2.6.1"
+  },
+  "keywords": ["velox", "scraping", "automation", "jobs", "queue"],
+  "author": "loak7993",
+  "license": "MIT"
+}
