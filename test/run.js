@@ -1,12 +1,13 @@
 // velox-grid :: test/run.js — e2e suite. Boots a fresh Postgres database, the API
 // and a worker in-process, then exercises every production behavior.
-import { spawnSync } from 'node:child_process';
+// The throwaway database is created/dropped over the pg protocol (no docker, no
+// psql binary) so the suite runs against CI services, containers or native PG alike.
 import { createHmac, randomBytes } from 'node:crypto';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import pg from 'pg';
 
-const PG = { host: '127.0.0.1', port: 5433, user: 'postgres', password: 'griddev' };
 const results = [];
 process.env.GRID_QUIET = '1';
 const check = (name, cond, extra = '') => {
@@ -15,13 +16,23 @@ const check = (name, cond, extra = '') => {
 };
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-process.env.ARTIFACT_DIR = mkdtempSync(join(tmpdir(), 'grid-artifacts-'));
 
-/* 1. fresh database */
+process.env.ARTIFACT_DIR = mkdtempSync(join(tmpdir(), 'grid-artifacts-'));
+const BASE_URL = process.env.GRID_TEST_PG || 'postgres://postgres:griddev@127.0.0.1:5433';
+
+/* 1. fresh database — created over the wire against the admin db */
 const DB = 'grid_test_' + randomBytes(4).toString('hex');
-const r = spawnSync('docker', ['exec', 'velox-grid-pg', 'psql', '-U', 'postgres', '-c', `CREATE DATABASE ${DB}`], { encoding: 'utf8' });
-check('fresh test database created', r.status === 0, r.stderr);
-process.env.DATABASE_URL = `postgres://postgres:griddev@127.0.0.1:5433/${DB}`;
+let admin;
+try {
+  admin = new pg.Client({ connectionString: BASE_URL + '/postgres' });
+  await admin.connect();
+  await admin.query(`CREATE DATABASE ${DB}`);
+  check('fresh test database created', true);
+} catch (e) {
+  check('fresh test database created', false, e.message);
+  process.exit(1);
+}
+process.env.DATABASE_URL = `${BASE_URL}/${DB}`;
 
 const { migrate, closeDb } = await import('../src/db.js');
 await migrate();
@@ -157,6 +168,7 @@ check('stats endpoint', stats.status === 200 && typeof stats.json.queued === 'nu
 await closeDb();
 const failedCount = results.filter(([, ok]) => !ok).length;
 console.log(`\n${results.length - failedCount}/${results.length} passed`);
-spawnSync('docker', ['exec', 'velox-grid-pg', 'psql', '-U', 'postgres', '-c', `DROP DATABASE ${DB}`], { stdio: 'ignore' });
+await admin.query(`DROP DATABASE ${DB}`).catch(() => {});
+await admin.end();
 server.close(); hook.server.close(); site.server.close(); stopWorker();
 process.exit(failedCount ? 1 : 0);
